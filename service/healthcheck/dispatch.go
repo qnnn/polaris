@@ -122,7 +122,7 @@ func (d *Dispatcher) reloadSelfContinuum() bool {
 		}
 		nextBuckets[commonhash.Bucket{
 			Host:   instance.GetHost().GetValue(),
-			Weight: weight,
+			Weight: instance.GetWeight().GetValue(),
 		}] = true
 	})
 	if len(nextBuckets) == 0 {
