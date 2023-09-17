@@ -48,9 +48,7 @@ func init() {
 type stableStore struct {
 	*namespaceStore
 	*serviceStore
-	// todo 多态
-	//*instanceStore
-	*instanceStoreV2
+	*instanceStore
 	*routingConfigStore
 	*l5Store
 	*rateLimitStore
@@ -262,12 +260,7 @@ func (s *stableStore) newStore() {
 
 	s.serviceStore = &serviceStore{master: s.master, slave: s.slave}
 
-	// todo 分支判断
-	//s.instanceStore = &instanceStore{master: s.master, slave: s.slave}
-	s.instanceStoreV2 = &instanceStoreV2{
-		master: s.master,
-		slave:  s.slave,
-	}
+	s.instanceStore = &instanceStore{master: s.master, slave: s.slave}
 
 	s.routingConfigStore = &routingConfigStore{master: s.master, slave: s.slave}
 
