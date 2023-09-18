@@ -28,6 +28,9 @@ import (
 	"time"
 )
 
+// doubleWrite 双写health_check、instance_metadata开关
+var doubleWrite = true
+
 // instanceStore 实现了InstanceStore接口
 type instanceStore struct {
 	master *BaseDB // 大部分操作都用主数据库
@@ -847,12 +850,12 @@ func (ins *instanceStore) getRowExpandInstances(rows *sql.Rows) ([]*model.Instan
 		if progress%50000 == 0 {
 			log.Infof("[Store][database] expand instance fetch rows progress: %d", progress)
 		}
-		var metadataType, metadata string
+		var metadata string
 		err := rows.Scan(&instance.ID, &instance.ServiceID, &instance.VpcID, &instance.Host, &instance.Port,
 			&instance.Protocol, &instance.Version, &instance.HealthStatus, &instance.Isolate,
 			&instance.Weight, &instance.EnableHealthCheck, &instance.LogicSet, &instance.Region,
 			&instance.Zone, &instance.Campus, &instance.Priority, &instance.Revision, &instance.Flag,
-			&instance.CheckType, &instance.TTL, &metadataType, &metadata, &item.ServiceName, &item.Namespace,
+			&instance.CheckType, &instance.TTL, &metadata, &item.ServiceName, &item.Namespace,
 			&instance.CreateTime, &instance.ModifyTime)
 		if err != nil {
 			log.Errorf("[Store][database] fetch instance rows err: %s", err.Error())
@@ -874,6 +877,11 @@ func (ins *instanceStore) getRowExpandInstances(rows *sql.Rows) ([]*model.Instan
 	}
 
 	return out, nil
+}
+
+// SwitchDoubleWrite 双写开关
+func SwitchDoubleWrite(enable bool) {
+	doubleWrite = enable
 }
 
 // batchAddMainInstancesV2 往instance主表中增加数据，包括health_check、metadata
@@ -1129,8 +1137,7 @@ func unMarshalInstanceMetadata(meta string) (map[string]string, error) {
 // batchReplaceInstanceCheckV1IfNecessary 批量变更healthCheck数据
 // @note 升级过程中双写，升级后关闭
 func batchReplaceInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Instance) error {
-	doubleWriteInstance := true
-	if !doubleWriteInstance {
+	if !doubleWrite {
 		return nil
 	}
 	str := "replace into health_check(`id`, `type`, `ttl`) values"
@@ -1159,8 +1166,7 @@ func batchReplaceInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Insta
 // batchReplaceInstanceMetaV1IfNecessary 批量变更metadata数据
 // @note 升级过程中双写，升级后关闭
 func batchReplaceInstanceMetaV1IfNecessary(tx *BaseTx, instances []*model.Instance) error {
-	doubleWriteInstance := true
-	if !doubleWriteInstance {
+	if !doubleWrite {
 		return nil
 	}
 	// batch add instance metadata 批量增加metadata数据
