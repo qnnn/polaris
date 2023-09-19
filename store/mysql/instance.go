@@ -915,6 +915,8 @@ func batchAddMainInstancesV2(tx *BaseTx, instances []*model.Instance) error {
 				return err
 			}
 			args = append(args, metadata)
+		} else {
+			args = append(args, nil)
 		}
 	}
 	_, err := tx.Exec(str, args...)
@@ -926,19 +928,41 @@ func updateInstanceMainV2(tx *BaseTx, instance *model.Instance) error {
 	str := `update instance set protocol = ?,
 	 version = ?, health_status = ?, isolate = ?, weight = ?, enable_health_check = ?, logic_set = ?,
 	 cmdb_region = ?, cmdb_zone = ?, cmdb_idc = ?, priority = ?, revision = ?, health_check_type = ?, 
-	 health_check_ttl = ?, metadata = ?, mtime = sysdate() where id = ?`
+	 health_check_ttl = ?,`
 
-	metadata, err := marshalInstanceMetadata(instance.Metadata())
-	if err != nil {
-		return err
+	// 只有metadata为nil的时候，则不用处理
+	if instance.Metadata() != nil {
+		str += ` metadata = ?,`
+	}
+	str += ` mtime = sysdate() where id = ?`
+
+	args := make([]interface{}, 0)
+	args = append(args, instance.Protocol(), instance.Version(), instance.Healthy(), instance.Isolate())
+	args = append(args, instance.Weight(), instance.EnableHealthCheck(), instance.LogicSet())
+	args = append(args, instance.Location().GetRegion().GetValue(), instance.Location().GetZone().GetValue())
+	args = append(args, instance.Location().GetCampus().GetValue(), instance.Priority(), instance.Revision())
+
+	if instance.HealthCheck() != nil {
+		args = append(args, instance.HealthCheck().GetType(), instance.HealthCheck().GetHeartbeat().GetTtl().GetValue())
+	} else {
+		args = append(args, nil, nil)
 	}
 
-	_, err = tx.Exec(str, instance.Protocol(), instance.Version(), instance.Healthy(), instance.Isolate(),
-		instance.Weight(), instance.EnableHealthCheck(), instance.LogicSet(),
-		instance.Location().GetRegion().GetValue(), instance.Location().GetZone().GetValue(),
-		instance.Location().GetCampus().GetValue(), instance.Priority(), instance.Revision(),
-		instance.HealthCheck().GetType(), instance.HealthCheck().GetHeartbeat().GetTtl().GetValue(),
-		metadata, instance.ID())
+	if instance.Metadata() != nil {
+		if len(instance.Metadata()) == 0 {
+			args = append(args, nil)
+		} else {
+			metadata, err := marshalInstanceMetadata(instance.Metadata())
+			if err != nil {
+				return err
+			}
+			args = append(args, metadata)
+		}
+	}
+
+	args = append(args, instance.ID())
+
+	_, err := tx.Exec(str, args...)
 
 	return err
 }
@@ -1145,6 +1169,10 @@ func batchReplaceInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Insta
 	args := make([]interface{}, 0)
 	for _, entry := range instances {
 		if entry.HealthCheck() == nil {
+			deleteStr := "delete from health_check where id = ?"
+			if _, err := tx.Exec(deleteStr, entry.ID()); err != nil {
+				return err
+			}
 			continue
 		}
 		if !first {
