@@ -513,12 +513,12 @@ func (ins *instanceStore) GetMoreInstances(tx store.Tx, mtime time.Time, firstUp
 
 // GetInstanceMeta 根据实例ID获取实例的metadata
 func (ins *instanceStore) GetInstanceMeta(instanceID string) (map[string]string, error) {
-	instance, err := ins.getInstance(instanceID)
+	instance, err := ins.GetInstance(instanceID)
 	if err != nil {
 		log.Errorf("[Store][database] query instance meta err: %s", err.Error())
 		return nil, err
 	}
-	if instance.Metadata() == nil {
+	if instance == nil || instance.Metadata() == nil {
 		return map[string]string{}, nil
 	}
 	return instance.Metadata(), err
@@ -618,9 +618,11 @@ func (ins *instanceStore) BatchAppendInstanceMetadata(requests []*store.Instance
 				log.Errorf("[Store][database] append instance metadata query source instance err: %s", err.Error())
 				return err
 			}
-			sourceMetadata := instance.Metadata()
-			if sourceMetadata == nil {
+			var sourceMetadata map[string]string
+			if instance == nil || instance.Metadata() == nil {
 				sourceMetadata = make(map[string]string, len(appendMetadata))
+			} else {
+				sourceMetadata = instance.Metadata()
 			}
 			for metaKey, metaVal := range appendMetadata {
 				sourceMetadata[metaKey] = metaVal
@@ -1112,7 +1114,7 @@ func fetchInstanceMetaRowsV2(instances map[string]*model.Instance, rows *sql.Row
 
 // genInstanceSelectSQLWithoutMeta 生成instance的select sql语句，不包括metadata
 func genInstanceSelectSQLWithoutMeta() string {
-	str := `select id, service_id, IFNULL(vpc_id,""), host, port, IFNULL(protocol, ""), IFNULL(version, ""),
+	str := `select instance.id, service_id, IFNULL(vpc_id,""), host, port, IFNULL(protocol, ""), IFNULL(version, ""),
 			 health_status, isolate, weight, enable_health_check, IFNULL(logic_set, ""), IFNULL(cmdb_region, ""), 
 			 IFNULL(cmdb_zone, ""), IFNULL(cmdb_idc, ""), priority, revision, flag, 
 			 IFNULL(health_check_type, IFNULL(health_check.type, -1)), IFNULL(health_check_ttl, IFNULL(health_check.ttl, 0)),
@@ -1213,6 +1215,9 @@ func batchReplaceInstanceMetaV1IfNecessary(tx *BaseTx, instances []*model.Instan
 		// if entry.FirstRegis {
 		// 	continue
 		// }
+		if entry == nil {
+			continue
+		}
 
 		ids = append(ids, entry.ID())
 
