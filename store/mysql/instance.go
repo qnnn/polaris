@@ -25,11 +25,16 @@ import (
 	"github.com/polarismesh/polaris/common/model"
 	"github.com/polarismesh/polaris/store"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // doubleWrite 双写health_check、instance_metadata开关
-var doubleWrite = true
+var doubleWrite = &atomic.Bool{}
+
+func init() {
+	doubleWrite.Store(true)
+}
 
 // instanceStore 实现了InstanceStore接口
 type instanceStore struct {
@@ -614,6 +619,9 @@ func (ins *instanceStore) BatchAppendInstanceMetadata(requests []*store.Instance
 				return err
 			}
 			sourceMetadata := instance.Metadata()
+			if sourceMetadata == nil {
+				sourceMetadata = make(map[string]string, len(appendMetadata))
+			}
 			for metaKey, metaVal := range appendMetadata {
 				sourceMetadata[metaKey] = metaVal
 			}
@@ -881,7 +889,7 @@ func (ins *instanceStore) getRowExpandInstances(rows *sql.Rows) ([]*model.Instan
 
 // SwitchDoubleWrite 双写开关
 func SwitchDoubleWrite(enable bool) {
-	doubleWrite = enable
+	doubleWrite.Swap(enable)
 }
 
 // batchAddMainInstancesV2 往instance主表中增加数据，包括health_check、metadata
@@ -1161,7 +1169,7 @@ func unMarshalInstanceMetadata(meta string) (map[string]string, error) {
 // batchReplaceInstanceCheckV1IfNecessary 批量变更healthCheck数据
 // @note 升级过程中双写，升级后关闭
 func batchReplaceInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Instance) error {
-	if !doubleWrite {
+	if !doubleWrite.Load() {
 		return nil
 	}
 	str := "replace into health_check(`id`, `type`, `ttl`) values"
@@ -1194,7 +1202,7 @@ func batchReplaceInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Insta
 // batchReplaceInstanceMetaV1IfNecessary 批量变更metadata数据
 // @note 升级过程中双写，升级后关闭
 func batchReplaceInstanceMetaV1IfNecessary(tx *BaseTx, instances []*model.Instance) error {
-	if !doubleWrite {
+	if !doubleWrite.Load() {
 		return nil
 	}
 	// batch add instance metadata 批量增加metadata数据
