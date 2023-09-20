@@ -20,12 +20,13 @@ package httpserver
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"strconv"
-
 	"github.com/emicklei/go-restful/v3"
+	"github.com/polarismesh/polaris/store"
+	sqldb "github.com/polarismesh/polaris/store/mysql"
 	apimodel "github.com/polarismesh/specification/source/go/api/v1/model"
 	apiservice "github.com/polarismesh/specification/source/go/api/v1/service_manage"
+	"net/http"
+	"strconv"
 
 	"github.com/polarismesh/polaris/admin"
 	"github.com/polarismesh/polaris/apiserver/httpserver/docs"
@@ -61,6 +62,8 @@ func (h *HTTPServer) GetAdminAccessServer() *restful.WebService {
 	ws.Route(docs.EnrichCleanInstanceApiDocs(ws.POST("/instance/clean").To(h.CleanInstance)))
 	ws.Route(docs.EnrichBatchCleanInstancesApiDocs(ws.POST("/instance/batchclean").To(h.BatchCleanInstances)))
 	ws.Route(docs.EnrichGetLastHeartbeatApiDocs(ws.GET("/instance/heartbeat").To(h.GetLastHeartbeat)))
+	ws.Route(docs.EnrichSwitchInstanceDoubleWriteEnableApiDocs(
+		ws.POST("/instance/doublewrite")).To(h.SwitchInstanceDoubleWrite))
 	ws.Route(docs.EnrichGetLogOutputLevelApiDocs(ws.GET("/log/outputlevel").To(h.GetLogOutputLevel)))
 	ws.Route(docs.EnrichSetLogOutputLevelApiDocs(ws.PUT("/log/outputlevel").To(h.SetLogOutputLevel)))
 	ws.Route(docs.EnrichListLeaderElectionsApiDocs(ws.GET("/leaders").To(h.ListLeaderElections)))
@@ -292,6 +295,28 @@ func (h *HTTPServer) GetCMDBInfo(req *restful.Request, rsp *restful.Response) {
 		return
 	}
 	_ = rsp.WriteAsJson(ret)
+}
+
+// SwitchInstanceDoubleWrite 双写instance表开关
+func (h *HTTPServer) SwitchInstanceDoubleWrite(req *restful.Request, rsp *restful.Response) {
+	mysqlDB, err := store.GetStore()
+	if err != nil {
+		_ = rsp.WriteError(http.StatusBadRequest, err)
+		return
+	}
+	storeImpl := mysqlDB.Name()
+	if storeImpl != sqldb.STORENAME {
+		_ = rsp.WriteErrorString(http.StatusBadRequest, "not supported for non-MySQL implementations")
+	}
+
+	params := httpcommon.ParseQueryParams(req)
+	enable, err := strconv.ParseBool(params["enable"])
+	if err != nil {
+		_ = rsp.WriteErrorString(http.StatusBadRequest, "invalid param")
+		return
+	}
+	sqldb.SwitchDoubleWrite(enable)
+	_ = rsp.WriteEntity("ok")
 }
 
 func initContext(req *restful.Request) context.Context {
