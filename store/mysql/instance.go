@@ -701,7 +701,7 @@ func (ins *instanceStore) BatchRemoveInstanceMetadata(requests []*store.Instance
 
 // getInstance 内部获取instance函数，根据instanceID，直接读取元数据，不做其他过滤
 func (ins *instanceStore) getInstance(instanceID string) (*model.Instance, error) {
-	str := genCompleteInstanceSelectSql() + " where instance.id = ?"
+	str := genCompleteInstanceSelectSQL() + " where instance.id = ?"
 	rows, err := ins.master.Query(str, instanceID)
 	if err != nil {
 		log.Errorf("[Store][database] get instance query err: %s", err.Error())
@@ -735,7 +735,6 @@ func (ins *instanceStore) getInstance(instanceID string) (*model.Instance, error
 // @note ro库有多个实例，且主库到ro库各实例的同步时间不一致。为避免获取不到meta，需要采用一条sql语句获取全部数据
 func (ins *instanceStore) getMoreInstancesMainWithMeta(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (
 	map[string]*model.Instance, error) {
-	// 获取全量服务实例
 	instances, err := ins.getMoreInstancesMain(tx, mtime, firstUpdate, serviceID)
 	if err != nil {
 		log.Errorf("[Store][database] get more instance main err: %s", err.Error())
@@ -807,8 +806,9 @@ func (ins *instanceStore) getMoreInstancesMainWithoutMeta(tx *BaseTx, mtime time
 }
 
 // getMoreInstancesMain 获取增量instances 主表内容，health_check内容，metadata内容
-func (ins *instanceStore) getMoreInstancesMain(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (map[string]*model.Instance, error) {
-	str := genCompleteInstanceSelectSql() + " where mtime >= FROM_UNIXTIME(?)"
+func (ins *instanceStore) getMoreInstancesMain(tx *BaseTx, mtime time.Time, firstUpdate bool,
+	serviceID []string) (map[string]*model.Instance, error) {
+	str := genCompleteInstanceSelectSQL() + " where mtime >= FROM_UNIXTIME(?)"
 	args := make([]interface{}, 0, len(serviceID)+1)
 	args = append(args, timeToTimestamp(mtime))
 
@@ -894,7 +894,7 @@ func SwitchDoubleWrite(enable bool) {
 	doubleWrite.Swap(enable)
 }
 
-// batchAddMainInstances 往instance主表中增加数据，包括health_check、metadata
+// batchAddMainInstances 批量增加main instance数据，包括health_check、metadata
 func batchAddMainInstances(tx *BaseTx, instances []*model.Instance) error {
 	str := `replace into instance(id, service_id, vpc_id, host, port, protocol, version, health_status, isolate,
 		 weight, enable_health_check, logic_set, cmdb_region, cmdb_zone, cmdb_idc, priority, revision, 
@@ -959,15 +959,11 @@ func updateInstanceMain(tx *BaseTx, instance *model.Instance) error {
 	}
 
 	if instance.Metadata() != nil {
-		if len(instance.Metadata()) == 0 {
-			args = append(args, nil)
-		} else {
-			metadata, err := marshalInstanceMetadata(instance.Metadata())
-			if err != nil {
-				return err
-			}
-			args = append(args, metadata)
+		metadata, err := marshalInstanceMetadata(instance.Metadata())
+		if err != nil {
+			return err
 		}
+		args = append(args, metadata)
 	}
 
 	args = append(args, instance.ID())
@@ -1124,8 +1120,8 @@ func genInstanceSelectSQLWithoutMeta() string {
 	return str
 }
 
-// genCompleteInstanceSelectSql 生成instance的select sql语句，包括metadata
-func genCompleteInstanceSelectSql() string {
+// genCompleteInstanceSelectSQL 生成instance的select sql语句，包括metadata
+func genCompleteInstanceSelectSQL() string {
 	str := `select instance.id, service_id, IFNULL(vpc_id,""), host, port, IFNULL(protocol, ""), IFNULL(version, ""),
 			 health_status, isolate, weight, enable_health_check, IFNULL(logic_set, ""), IFNULL(cmdb_region, ""), 
 			 IFNULL(cmdb_zone, ""), IFNULL(cmdb_idc, ""), priority, revision, flag, 
