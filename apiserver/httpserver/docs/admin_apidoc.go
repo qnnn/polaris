@@ -140,3 +140,11 @@ func EnrichGetReportClientsApiDocs(r *restful.RouteBuilder) *restful.RouteBuilde
 		Metadata(restfulspec.KeyOpenAPITags, maintainApiTags).
 		Returns(0, "", model.PrometheusDiscoveryResponse{})
 }
+
+func EnrichSwitchInstanceDoubleWriteEnableApiDocs(r *restful.RouteBuilder) *restful.RouteBuilder {
+	return r.
+		Doc("双写instance表控制器").
+		Metadata(restfulspec.KeyOpenAPITags, maintainApiTags).
+		Param(restful.QueryParameter("enable", "双写instance开关").DataType(typeNameString).Required(true)).
+		Returns(0, "", BaseResponse{})
+}

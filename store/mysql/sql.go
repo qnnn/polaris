@@ -198,7 +198,8 @@ func genWhereSQLAndArgs(str string, filter, metaFilter map[string]string, order 
 	args = append(args, filterArgs...)
 	var metaStr string
 	var metaArgs []interface{}
-	if len(metaFilter) > 0 {
+	// todo 表结构变更后，暂不支持通过metadata键值对过滤
+	if len(metaFilter) > 0 && false {
 		metaStr, metaArgs = genInstanceMetadataArgs(metaFilter)
 		args = append(args, metaArgs...)
 		baseStr += conjunction + metaStr
