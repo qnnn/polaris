@@ -123,7 +123,10 @@ func (s *stableStore) Initialize(conf *store.Config) error {
 	}
 
 	log.Infof("[Store][database] connect the database successfully")
-
+	raw, flag := conf.Option["instanceDoubleWrite"].(bool)
+	if flag {
+		SwitchDoubleWrite(raw)
+	}
 	s.start = true
 	s.newStore()
 	return nil
