@@ -64,7 +64,7 @@ func (ins *instanceStore) addInstance(instance *model.Instance) error {
 		return err
 	}
 
-	if err := batchAddMainInstancesV2(tx, []*model.Instance{instance}); err != nil {
+	if err := batchAddMainInstances(tx, []*model.Instance{instance}); err != nil {
 		log.Errorf("[Store][database] add instance insert err: %s", err.Error())
 		return err
 	}
@@ -105,7 +105,7 @@ func (ins *instanceStore) batchAddInstances(instances []*model.Instance) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := batchAddMainInstancesV2(tx, instances); err != nil {
+	if err := batchAddMainInstances(tx, instances); err != nil {
 		log.Errorf("[Store][database] batch add main instances err: %s", err.Error())
 		return err
 	}
@@ -153,7 +153,7 @@ func (ins *instanceStore) updateInstance(instance *model.Instance) error {
 	defer func() { _ = tx.Rollback() }()
 
 	// 更新main表
-	if err := updateInstanceMainV2(tx, instance); err != nil {
+	if err := updateInstanceMain(tx, instance); err != nil {
 		log.Errorf("[Store][database] update instance err: %s", err.Error())
 		return err
 	}
@@ -442,7 +442,7 @@ func (ins *instanceStore) getExpandInstances(filter, metaFilter map[string]strin
 	_, isHost := filter["host"]
 	needForceIndex := isName || isNamespace || isHost
 
-	str := genExpandInstanceSelectSQLV2(needForceIndex)
+	str := genExpandInstanceSelectSQL(needForceIndex)
 	order := &Order{"instance.mtime", "desc"}
 	str, args := genWhereSQLAndArgs(str, filter, metaFilter, order, offset, limit)
 
@@ -701,14 +701,14 @@ func (ins *instanceStore) BatchRemoveInstanceMetadata(requests []*store.Instance
 
 // getInstance 内部获取instance函数，根据instanceID，直接读取元数据，不做其他过滤
 func (ins *instanceStore) getInstance(instanceID string) (*model.Instance, error) {
-	str := genCompleteInstanceSelectSqlV2() + " where instance.id = ?"
+	str := genCompleteInstanceSelectSql() + " where instance.id = ?"
 	rows, err := ins.master.Query(str, instanceID)
 	if err != nil {
 		log.Errorf("[Store][database] get instance query err: %s", err.Error())
 		return nil, err
 	}
 
-	out, err := fetchInstanceRowsV2(rows)
+	out, err := fetchInstanceRows(rows)
 	if err != nil {
 		return nil, err
 	}
@@ -724,7 +724,7 @@ func (ins *instanceStore) getInstance(instanceID string) (*model.Instance, error
 		log.Errorf("[Store][database] acquire instances meta query err: %s", err.Error())
 		return nil, err
 	}
-	if err := fetchInstanceMetaRowsV2(map[string]*model.Instance{out[0].ID(): out[0]}, rows); err != nil {
+	if err := fetchInstanceMetaRows(map[string]*model.Instance{out[0].ID(): out[0]}, rows); err != nil {
 		return nil, err
 	}
 
@@ -736,7 +736,7 @@ func (ins *instanceStore) getInstance(instanceID string) (*model.Instance, error
 func (ins *instanceStore) getMoreInstancesMainWithMeta(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (
 	map[string]*model.Instance, error) {
 	// 获取全量服务实例
-	instances, err := ins.getMoreInstancesV2(tx, mtime, firstUpdate, serviceID)
+	instances, err := ins.getMoreInstancesMain(tx, mtime, firstUpdate, serviceID)
 	if err != nil {
 		log.Errorf("[Store][database] get more instance main err: %s", err.Error())
 		return nil, err
@@ -763,7 +763,7 @@ func (ins *instanceStore) getMoreInstancesMainWithMeta(tx *BaseTx, mtime time.Ti
 		log.Errorf("[Store][database] acquire instances meta query err: %s", err.Error())
 		return nil, err
 	}
-	if err := fetchInstanceMetaRowsV2(instances, rows); err != nil {
+	if err := fetchInstanceMetaRows(instances, rows); err != nil {
 		return nil, err
 	}
 	return instances, nil
@@ -806,9 +806,9 @@ func (ins *instanceStore) getMoreInstancesMainWithoutMeta(tx *BaseTx, mtime time
 	return out, nil
 }
 
-// getMoreInstancesV2 获取增量instance 主表内容，health_check内容，metadata内容
-func (ins *instanceStore) getMoreInstancesV2(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (map[string]*model.Instance, error) {
-	str := genCompleteInstanceSelectSqlV2() + " where mtime >= FROM_UNIXTIME(?)"
+// getMoreInstancesMain 获取增量instances 主表内容，health_check内容，metadata内容
+func (ins *instanceStore) getMoreInstancesMain(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (map[string]*model.Instance, error) {
+	str := genCompleteInstanceSelectSql() + " where mtime >= FROM_UNIXTIME(?)"
 	args := make([]interface{}, 0, len(serviceID)+1)
 	args = append(args, timeToTimestamp(mtime))
 
@@ -894,8 +894,8 @@ func SwitchDoubleWrite(enable bool) {
 	doubleWrite.Swap(enable)
 }
 
-// batchAddMainInstancesV2 往instance主表中增加数据，包括health_check、metadata
-func batchAddMainInstancesV2(tx *BaseTx, instances []*model.Instance) error {
+// batchAddMainInstances 往instance主表中增加数据，包括health_check、metadata
+func batchAddMainInstances(tx *BaseTx, instances []*model.Instance) error {
 	str := `replace into instance(id, service_id, vpc_id, host, port, protocol, version, health_status, isolate,
 		 weight, enable_health_check, logic_set, cmdb_region, cmdb_zone, cmdb_idc, priority, revision, 
 		 health_check_type, health_check_ttl, metadata, ctime, mtime) 
@@ -933,8 +933,8 @@ func batchAddMainInstancesV2(tx *BaseTx, instances []*model.Instance) error {
 	return err
 }
 
-// updateInstanceMainV2 更新instance主表
-func updateInstanceMainV2(tx *BaseTx, instance *model.Instance) error {
+// updateInstanceMain 更新instance主表
+func updateInstanceMain(tx *BaseTx, instance *model.Instance) error {
 	str := `update instance set protocol = ?,
 	 version = ?, health_status = ?, isolate = ?, weight = ?, enable_health_check = ?, logic_set = ?,
 	 cmdb_region = ?, cmdb_zone = ?, cmdb_idc = ?, priority = ?, revision = ?, health_check_type = ?, 
@@ -978,7 +978,7 @@ func updateInstanceMainV2(tx *BaseTx, instance *model.Instance) error {
 }
 
 // fetchInstanceRows 获取instance rows的内容
-func fetchInstanceRowsV2(rows *sql.Rows) ([]*model.Instance, error) {
+func fetchInstanceRows(rows *sql.Rows) ([]*model.Instance, error) {
 	var out []*model.Instance
 	err := callFetchInstanceWithMetaRows(rows, func(entry *model.InstanceStore) (b bool, e error) {
 		out = append(out, model.Store2Instance(entry))
@@ -1074,8 +1074,8 @@ func callFetchInstanceWithMetaRows(rows *sql.Rows, callback func(entry *model.In
 	return nil
 }
 
-// fetchInstanceMetaRowsV2 解析获取instance metadata
-func fetchInstanceMetaRowsV2(instances map[string]*model.Instance, rows *sql.Rows) error {
+// fetchInstanceMetaRows 解析获取instance metadata
+func fetchInstanceMetaRows(instances map[string]*model.Instance, rows *sql.Rows) error {
 	if rows == nil {
 		return nil
 	}
@@ -1124,8 +1124,8 @@ func genInstanceSelectSQLWithoutMeta() string {
 	return str
 }
 
-// genCompleteInstanceSelectSqlV2 生成instance的select sql语句，包括metadata
-func genCompleteInstanceSelectSqlV2() string {
+// genCompleteInstanceSelectSql 生成instance的select sql语句，包括metadata
+func genCompleteInstanceSelectSql() string {
 	str := `select instance.id, service_id, IFNULL(vpc_id,""), host, port, IFNULL(protocol, ""), IFNULL(version, ""),
 			 health_status, isolate, weight, enable_health_check, IFNULL(logic_set, ""), IFNULL(cmdb_region, ""), 
 			 IFNULL(cmdb_zone, ""), IFNULL(cmdb_idc, ""), priority, revision, flag, 
@@ -1137,7 +1137,7 @@ func genCompleteInstanceSelectSqlV2() string {
 }
 
 // genExpandInstanceSelectSQL 生成expandInstance的select sql语句
-func genExpandInstanceSelectSQLV2(needForceIndex bool) string {
+func genExpandInstanceSelectSQL(needForceIndex bool) string {
 	str := `select instance.id, service_id, IFNULL(vpc_id,""), host, port, IFNULL(protocol, ""), IFNULL(version, ""),
 			 health_status, isolate, weight, enable_health_check, IFNULL(logic_set, ""), IFNULL(cmdb_region, ""), 
 			 IFNULL(cmdb_zone, ""), IFNULL(cmdb_idc, ""), priority, instance.revision, instance.flag, 
