@@ -22,11 +22,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/polarismesh/polaris/common/model"
-	"github.com/polarismesh/polaris/store"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/polarismesh/polaris/common/model"
+	"github.com/polarismesh/polaris/store"
 )
 
 // doubleWrite 双写health_check、instance_metadata开关
