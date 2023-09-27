@@ -23,19 +23,16 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync/atomic"
 	"time"
+
+	"go.uber.org/atomic"
 
 	"github.com/polarismesh/polaris/common/model"
 	"github.com/polarismesh/polaris/store"
 )
 
 // doubleWrite 双写health_check、instance_metadata开关
-var doubleWrite = &atomic.Bool{}
-
-func init() {
-	doubleWrite.Store(true)
-}
+var doubleWrite = atomic.NewBool(true)
 
 // instanceStore 实现了InstanceStore接口
 type instanceStore struct {
@@ -628,6 +625,9 @@ func (ins *instanceStore) BatchAppendInstanceMetadata(requests []*store.Instance
 			for metaKey, metaVal := range appendMetadata {
 				sourceMetadata[metaKey] = metaVal
 			}
+			if instance != nil {
+				instance.Proto.Metadata = sourceMetadata
+			}
 
 			metadataJson, err := marshalInstanceMetadata(sourceMetadata)
 			if err != nil {
@@ -1026,7 +1026,7 @@ func callFetchInstanceWithoutMetaRows(rows *sql.Rows, callback func(entry *model
 	return nil
 }
 
-// callFetchInstanceWithoutMetaRows 带回调的fetch instance
+// callFetchInstanceWithMetaRows 带回调的fetch instance
 func callFetchInstanceWithMetaRows(rows *sql.Rows, callback func(entry *model.InstanceStore) (bool, error)) error {
 	if rows == nil {
 		return nil
@@ -1048,6 +1048,7 @@ func callFetchInstanceWithMetaRows(rows *sql.Rows, callback func(entry *model.In
 			log.Errorf("[Store][database] fetch instance rows err: %s", err.Error())
 			return err
 		}
+		item.Meta = nil
 		if len(metadata) != 0 {
 			item.Meta, err = unMarshalInstanceMetadata(metadata)
 			if err != nil {
