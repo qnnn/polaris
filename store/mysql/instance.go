@@ -776,6 +776,84 @@ func (ins *instanceStore) getMoreInstancesMainWithMeta(tx *BaseTx, mtime time.Ti
 	return instances, nil
 }
 
+// fetchInstanceMetaInSingleSQL 在一条sql中获取增量instance+healthcheck+meta内容
+func fetchInstanceMetaInSingleSQL(tx *BaseTx, mtime time.Time, serviceID []string) (
+	map[string]*model.Instance, error) {
+	str := genCompleteInstanceSelectSQL() + " where instance.mtime >= FROM_UNIXTIME(?)"
+	args := make([]interface{}, 0, len(serviceID)+1)
+	args = append(args, timeToTimestamp(mtime))
+
+	if len(serviceID) > 0 {
+		str += " and service_id in (" + PlaceholdersN(len(serviceID))
+		str += ")"
+	}
+	for _, id := range serviceID {
+		args = append(args, id)
+	}
+	rows, err := tx.Query(str, args...)
+	if err != nil {
+		log.Errorf("[Store][database] get more instance query err: %s", err.Error())
+		return nil, err
+	}
+	return fetchInstanceWithMetaRows(rows)
+}
+
+// fetchInstanceWithMetaRows 获取instance main+health_check+instance_metadata rows里面的数据
+func fetchInstanceWithMetaRows(rows *sql.Rows) (map[string]*model.Instance, error) {
+	if rows == nil {
+		return nil, nil
+	}
+	defer rows.Close()
+
+	out := make(map[string]*model.Instance)
+	var item model.InstanceStore
+	var metadataStr, id, mKey, mValue string
+	// 存储instance与metadata表的映射关系，用于覆盖instance表中metadata字段。结构为：instanceId => map[string]string
+	instanceMetaMap := make(map[string]map[string]string)
+	progress := 0
+	for rows.Next() {
+		progress++
+		if progress%100000 == 0 {
+			log.Infof("[Store][database] instance+meta fetch rows progress: %d", progress)
+		}
+		if err := rows.Scan(&item.ID, &item.ServiceID, &item.VpcID, &item.Host, &item.Port, &item.Protocol,
+			&item.Version, &item.HealthStatus, &item.Isolate, &item.Weight, &item.EnableHealthCheck, &item.LogicSet,
+			&item.Region, &item.Zone, &item.Campus, &item.Priority, &item.Revision, &item.Flag, &item.CheckType,
+			&item.TTL, &metadataStr, &id, &mKey, &mValue, &item.CreateTime, &item.ModifyTime); err != nil {
+			log.Errorf("[Store][database] fetch instance+meta rows err: %s", err.Error())
+			return nil, err
+		}
+		if _, ok := out[item.ID]; !ok {
+			out[item.ID] = model.Store2Instance(&item)
+		}
+		if len(metadataStr) != 0 {
+			metadata, err := unMarshalInstanceMetadata(metadataStr)
+			if err != nil {
+				return nil, err
+			}
+			out[item.ID].Proto.Metadata = metadata
+		}
+		// 实例存在meta
+		if id != "" {
+			if instanceMetaMap[item.ID] == nil {
+				instanceMetaMap[item.ID] = make(map[string]string)
+			}
+			instanceMetaMap[item.ID][mKey] = mValue
+		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Errorf("[Store][database] fetch instance+metadata rows next err: %s", err.Error())
+		return nil, err
+	}
+	for instanceId, metadata := range instanceMetaMap {
+		if _, ok := out[instanceId]; !ok {
+			continue
+		}
+		out[instanceId].Proto.Metadata = metadata
+	}
+	return out, nil
+}
+
 // getMoreInstancesMainWithoutMeta 获取增量instance+healthcheck内容
 func (ins *instanceStore) getMoreInstancesMainWithoutMeta(tx *BaseTx, mtime time.Time, firstUpdate bool, serviceID []string) (
 	map[string]*model.Instance, error) {
@@ -913,84 +991,6 @@ func (ins *instanceStore) batchAcquireInstanceMetadata(instances []interface{}) 
 	}
 
 	return nil
-}
-
-// fetchInstanceMetaInSingleSQL 在一条sql中获取增量instance+healthcheck+meta内容
-func fetchInstanceMetaInSingleSQL(tx *BaseTx, mtime time.Time, serviceID []string) (
-	map[string]*model.Instance, error) {
-	str := genCompleteInstanceSelectSQL() + " where instance.mtime >= FROM_UNIXTIME(?)"
-	args := make([]interface{}, 0, len(serviceID)+1)
-	args = append(args, timeToTimestamp(mtime))
-
-	if len(serviceID) > 0 {
-		str += " and service_id in (" + PlaceholdersN(len(serviceID))
-		str += ")"
-	}
-	for _, id := range serviceID {
-		args = append(args, id)
-	}
-	rows, err := tx.Query(str, args...)
-	if err != nil {
-		log.Errorf("[Store][database] get more instance query err: %s", err.Error())
-		return nil, err
-	}
-	return fetchInstanceWithMetaRows(rows)
-}
-
-// fetchInstanceWithMetaRows 获取instance main+health_check+instance_metadata rows里面的数据
-func fetchInstanceWithMetaRows(rows *sql.Rows) (map[string]*model.Instance, error) {
-	if rows == nil {
-		return nil, nil
-	}
-	defer rows.Close()
-
-	out := make(map[string]*model.Instance)
-	var item model.InstanceStore
-	var metadataStr, id, mKey, mValue string
-	// 存储instance与metadata表的映射关系，用于覆盖instance表中metadata字段。结构为：instanceId => map[string]string
-	instanceMetaMap := make(map[string]map[string]string)
-	progress := 0
-	for rows.Next() {
-		progress++
-		if progress%100000 == 0 {
-			log.Infof("[Store][database] instance+meta fetch rows progress: %d", progress)
-		}
-		if err := rows.Scan(&item.ID, &item.ServiceID, &item.VpcID, &item.Host, &item.Port, &item.Protocol,
-			&item.Version, &item.HealthStatus, &item.Isolate, &item.Weight, &item.EnableHealthCheck, &item.LogicSet,
-			&item.Region, &item.Zone, &item.Campus, &item.Priority, &item.Revision, &item.Flag, &item.CheckType,
-			&item.TTL, &metadataStr, &id, &mKey, &mValue, &item.CreateTime, &item.ModifyTime); err != nil {
-			log.Errorf("[Store][database] fetch instance+meta rows err: %s", err.Error())
-			return nil, err
-		}
-		if _, ok := out[item.ID]; !ok {
-			out[item.ID] = model.Store2Instance(&item)
-		}
-		if len(metadataStr) != 0 {
-			metadata, err := unMarshalInstanceMetadata(metadataStr)
-			if err != nil {
-				return nil, err
-			}
-			out[item.ID].Proto.Metadata = metadata
-		}
-		// 实例存在meta
-		if id != "" {
-			if instanceMetaMap[item.ID] == nil {
-				instanceMetaMap[item.ID] = make(map[string]string)
-			}
-			instanceMetaMap[item.ID][mKey] = mValue
-		}
-	}
-	if err := rows.Err(); err != nil {
-		log.Errorf("[Store][database] fetch instance+metadata rows next err: %s", err.Error())
-		return nil, err
-	}
-	for instanceId, metadata := range instanceMetaMap {
-		if _, ok := out[instanceId]; !ok {
-			continue
-		}
-		out[instanceId].Proto.Metadata = metadata
-	}
-	return out, nil
 }
 
 // batchQueryMetadata 批量查找metadata
