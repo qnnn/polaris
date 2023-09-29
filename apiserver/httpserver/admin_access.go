@@ -23,7 +23,7 @@ import (
 	"net/http"
 	"strconv"
 
-	restful "github.com/emicklei/go-restful/v3"
+	"github.com/emicklei/go-restful/v3"
 	apimodel "github.com/polarismesh/specification/source/go/api/v1/model"
 	apiservice "github.com/polarismesh/specification/source/go/api/v1/service_manage"
 
@@ -63,7 +63,7 @@ func (h *HTTPServer) GetAdminAccessServer() *restful.WebService {
 	ws.Route(docs.EnrichCleanInstanceApiDocs(ws.POST("/instance/clean").To(h.CleanInstance)))
 	ws.Route(docs.EnrichBatchCleanInstancesApiDocs(ws.POST("/instance/batchclean").To(h.BatchCleanInstances)))
 	ws.Route(docs.EnrichGetLastHeartbeatApiDocs(ws.GET("/instance/heartbeat").To(h.GetLastHeartbeat)))
-	ws.Route(docs.EnrichSwitchInstanceDoubleWriteEnableApiDocs(
+	ws.Route(docs.EnrichSwitchInstanceDoubleWriteApiDocs(
 		ws.POST("/instance/doublewrite")).To(h.SwitchInstanceDoubleWrite))
 	ws.Route(docs.EnrichGetLogOutputLevelApiDocs(ws.GET("/log/outputlevel").To(h.GetLogOutputLevel)))
 	ws.Route(docs.EnrichSetLogOutputLevelApiDocs(ws.PUT("/log/outputlevel").To(h.SetLogOutputLevel)))
