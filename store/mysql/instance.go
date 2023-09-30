@@ -759,17 +759,22 @@ func (ins *instanceStore) getMoreInstancesMainWithMeta(tx *BaseTx, mtime time.Ti
 		return instances, err
 	}
 
-	data := make([]interface{}, 0, len(instances))
-	for idx := range instances {
-		data = append(data, instances[idx].Proto)
+	var rows *sql.Rows
+	if !firstUpdate {
+		data := make([]interface{}, 0, len(instances))
+		for idx := range instances {
+			data = append(data, instances[idx].Proto)
+		}
+		rows, err = batchQueryMetadata(tx.Query, data)
+	} else {
+		str := "select `id`, `mkey`, `mvalue` from instance_metadata"
+		rows, err = tx.Query(str)
 	}
-
-	rows, err := batchQueryMetadata(tx.Query, data)
-
 	if err != nil {
 		log.Errorf("[Store][database] instances meta query err: %s", err.Error())
 		return nil, err
 	}
+
 	if err := fetchInstanceMetaRows(instances, rows); err != nil {
 		return nil, err
 	}
