@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -665,15 +664,23 @@ func (ins *instanceStore) BatchRemoveInstanceMetadata(requests []*store.Instance
 			id := requests[i].InstanceID
 			revision := requests[i].Revision
 			keys := requests[i].Keys
-			sourceMetadata, err := ins.GetInstanceMeta(id)
+			instance, err := ins.GetInstance(id)
 			if err != nil {
 				log.Errorf("[Store][database] query instance metadata err: %s", err.Error())
 				return err
 			}
+			var sourceMetadata map[string]string
+			if instance == nil || instance.Metadata() == nil {
+				sourceMetadata = make(map[string]string)
+			} else {
+				sourceMetadata = instance.Metadata()
+			}
 			for _, key := range keys {
 				delete(sourceMetadata, key)
 			}
-
+			if instance != nil {
+				instance.Proto.Metadata = sourceMetadata
+			}
 			metadataJson, err := marshalInstanceMetadata(sourceMetadata)
 			if err != nil {
 				log.Errorf("[Store][database] remove instance metadata err: %s", err.Error())
@@ -686,19 +693,8 @@ func (ins *instanceStore) BatchRemoveInstanceMetadata(requests []*store.Instance
 				return err
 			}
 
-			str = "delete from instance_metadata where id = ? and mkey in (%s)"
-			values := make([]string, 0, len(keys))
-			args := make([]interface{}, 0, 1+len(keys))
-			args = append(args, id)
-			for i := range keys {
-				key := keys[i]
-				values = append(values, "?")
-				args = append(args, key)
-			}
-			str = fmt.Sprintf(str, strings.Join(values, ","))
-
-			if _, err := tx.Exec(str, args...); err != nil {
-				log.Errorf("[Store][database] remove instance metadata by keys err: %s", err.Error())
+			if err := batchUpdateInstanceMetaV1IfNecessary(tx, []*model.Instance{instance}); err != nil {
+				log.Errorf("[Store][database] double write instance meta err: %s", err.Error())
 				return err
 			}
 		}
@@ -1426,24 +1422,18 @@ func unMarshalInstanceMetadata(meta string) (map[string]string, error) {
 // batchUpdateInstanceCheckV1IfNecessary 批量变更healthCheck数据
 // @note 升级过程中双写，升级后关闭
 func batchUpdateInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Instance) error {
-	if !doubleWrite.Load() {
-		for _, entry := range instances {
-			deleteStr := "delete from health_check where id = ?"
-			if _, err := tx.Exec(deleteStr, entry.ID()); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
+	ids := make([]interface{}, 0, len(instances))
+	builder := strings.Builder{}
 	str := "replace into health_check(`id`, `type`, `ttl`) values"
 	first := true
 	args := make([]interface{}, 0)
 	for _, entry := range instances {
+		ids = append(ids, entry.ID())
+		if len(ids) > 1 {
+			builder.WriteString(",")
+		}
+		builder.WriteString("?")
 		if entry.HealthCheck() == nil {
-			deleteStr := "delete from health_check where id = ?"
-			if _, err := tx.Exec(deleteStr, entry.ID()); err != nil {
-				return err
-			}
 			continue
 		}
 		if !first {
@@ -1454,8 +1444,15 @@ func batchUpdateInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Instan
 		args = append(args, entry.ID(), entry.HealthCheck().GetType(),
 			entry.HealthCheck().GetHeartbeat().GetTtl().GetValue())
 	}
-	// 不存在健康检查信息，直接返回
-	if first {
+	// 先删除health_check相关数据
+	if len(ids) > 0 {
+		deleteStr := `delete from health_check where id in (` + builder.String() + `)`
+		if _, err := tx.Exec(deleteStr, ids...); err != nil {
+			return err
+		}
+	}
+	// 不存在健康检查信息或双写开关关闭，直接返回
+	if first || !doubleWrite.Load() {
 		return nil
 	}
 	if log.DebugEnabled() {
