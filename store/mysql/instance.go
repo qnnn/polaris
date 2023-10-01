@@ -827,7 +827,8 @@ func fetchInstanceWithMetaRows(rows *sql.Rows) (map[string]*model.Instance, erro
 		if _, ok := out[item.ID]; !ok {
 			out[item.ID] = model.Store2Instance(&item)
 		}
-		if len(metadataStr) != 0 {
+		// 已初始化过的不再重复初始化
+		if len(metadataStr) != 0 && out[item.ID].Proto.Metadata == nil {
 			metadata, err := unMarshalInstanceMetadata(metadataStr)
 			if err != nil {
 				return nil, err
