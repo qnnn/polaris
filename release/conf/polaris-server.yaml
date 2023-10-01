@@ -482,7 +482,7 @@ store:
   ## Database storage plugin
   # name: defaultStore
   # option:
-  #   instanceDoubleWrite: false
+  #   instanceDoubleWrite: true
   #   master:
   #     dbType: mysql
   #     dbName: polaris_server
