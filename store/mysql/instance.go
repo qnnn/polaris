@@ -1446,11 +1446,10 @@ func batchUpdateInstanceCheckV1IfNecessary(tx *BaseTx, instances []*model.Instan
 			entry.HealthCheck().GetHeartbeat().GetTtl().GetValue())
 	}
 	// 先删除health_check相关数据
-	if len(ids) > 0 {
+	if len(ids) > 0 && doubleWrite.Load() {
 		deleteStr := `delete from health_check where id in (` + builder.String() + `)`
-		if _, err := tx.Exec(deleteStr, ids...); err != nil {
-			return err
-		}
+		_, err := tx.Exec(deleteStr, ids...)
+		return err
 	}
 	// 不存在健康检查信息或双写开关关闭，直接返回
 	if first || !doubleWrite.Load() {
