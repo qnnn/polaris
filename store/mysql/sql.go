@@ -185,26 +185,16 @@ func genOrderAndPage(order *Order, page *Page) (string, []interface{}) {
 }
 
 // genWhereSQLAndArgs 生成service和instance查询数据的where语句和对应参数
-func genWhereSQLAndArgs(str string, filter, metaFilter map[string]string, order *Order, offset uint32, limit uint32) (
+func genWhereSQLAndArgs(str string, filter map[string]string, order *Order) (
 	string, []interface{}) {
 	baseStr := str
 	var args []interface{}
 	filterStr, filterArgs := genFilterSQL(filter)
-	var conjunction string = " where "
 	if filterStr != "" {
 		baseStr += " where " + filterStr
-		conjunction = " and "
 	}
 	args = append(args, filterArgs...)
-	var metaStr string
-	var metaArgs []interface{}
-	if len(metaFilter) > 0 {
-		metaStr, metaArgs = genInstanceMetadataArgs(metaFilter)
-		args = append(args, metaArgs...)
-		baseStr += conjunction + metaStr
-	}
-	page := &Page{offset, limit}
-	opStr, opArgs := genOrderAndPage(order, page)
+	opStr, opArgs := genOrderAndPage(order, nil)
 
 	return baseStr + opStr, append(args, opArgs...)
 }
